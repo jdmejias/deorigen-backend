@@ -159,6 +159,7 @@ model Product {
   slug            String   @unique
   description     String?
   shortDescription String?
+  videoUrl        String?  // YouTube/Vimeo narrative video
   price           Decimal  @db.Decimal(12, 2)
   compareAtPrice  Decimal? @db.Decimal(12, 2)
   currency        String   @default("EUR")

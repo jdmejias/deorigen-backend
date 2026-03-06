@@ -9,6 +9,7 @@ import {
   IsOptional,
   IsString,
   Min,
+  Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -105,6 +106,14 @@ export class CreateProductDto {
   @IsString()
   shortDescription?: string;
 
+  @ApiProperty({ description: 'URL del video de YouTube' })
+  @IsString()
+  @IsNotEmpty({ message: 'El enlace del video es obligatorio' })
+  @Matches(/^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.?be)\/.+$/, {
+    message: 'Debe ser un enlace válido de YouTube',
+  })
+  videoUrl: string;
+
   @ApiProperty({ example: 12.99 })
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
@@ -180,6 +189,14 @@ export class UpdateProductDto {
   @IsOptional()
   @IsString()
   shortDescription?: string;
+
+  @ApiPropertyOptional({ description: 'URL del video de YouTube' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.?be)\/.+$/, {
+    message: 'Debe ser un enlace válido de YouTube',
+  })
+  videoUrl?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
