@@ -37,6 +37,16 @@ async function bootstrap() {
   app.enableCors({
     origin: corsOrigins.length ? corsOrigins : true,
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Accept',
+      'Origin',
+      'X-Requested-With',
+    ],
+    exposedHeaders: ['Content-Disposition'],
+    maxAge: 86400, // Cache preflight for 24h — reduces OPTIONS calls
   });
 
   // Register multipart for file uploads

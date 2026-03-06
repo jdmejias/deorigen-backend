@@ -160,6 +160,46 @@ export class FarmersService {
     return { deleted: true };
   }
 
+  /* ── Withdrawals ── */
+  async createWithdrawal(farmerId: string, amount: number, bankAccountInfo: string) {
+    const farmer = await this.prisma.farmerProfile.findUnique({ where: { id: farmerId } });
+    if (!farmer) throw new NotFoundException('Productor no encontrado');
+    if (farmer.availableBalance.toNumber() < amount) {
+      throw new ConflictException('Saldo insuficiente para retirar');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // Create withdrawal request
+      // INV-02: bankAccountInfo is stored but never returned to the API caller
+      const withdrawal = await tx.withdrawal.create({
+        data: {
+          farmerId,
+          amount,
+          bankAccountInfo,
+          status: 'PENDING',
+        },
+        select: {
+          id: true,
+          farmerId: true,
+          amount: true,
+          currency: true,
+          status: true,
+          createdAt: true,
+          // bankAccountInfo intentionally excluded from response
+        },
+      });
+      // Freeze the balance
+      await tx.farmerProfile.update({
+        where: { id: farmerId },
+        data: {
+          availableBalance: { decrement: amount },
+          lockedBalance: { increment: amount }
+        }
+      });
+      return withdrawal;
+    });
+  }
+
   /* ── Helpers ── */
   private async uniqueSlug(base: string): Promise<string> {
     let slug = base;

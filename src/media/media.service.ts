@@ -37,7 +37,19 @@ export class MediaService {
 
     // Write file to disk
     const writeStream = fs.createWriteStream(filePath);
+    let totalBytes = 0;
+    const isVideo = file.mimetype.startsWith('video');
+    const MAX_VIDEO_SIZE = 5 * 1024 * 1024; // 5 MB
+
     await new Promise<void>((resolve, reject) => {
+      file.file.on('data', (chunk) => {
+        totalBytes += chunk.length;
+        if (isVideo && totalBytes > MAX_VIDEO_SIZE) {
+          writeStream.destroy();
+          fs.unlink(filePath, () => {});
+          reject(new Error('El video excede el límite permitido de 5MB'));
+        }
+      });
       (file.file as any).pipe(writeStream);
       writeStream.on('finish', resolve);
       writeStream.on('error', reject);

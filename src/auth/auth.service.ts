@@ -2,6 +2,8 @@ import {
   Injectable,
   ConflictException,
   UnauthorizedException,
+  InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
@@ -11,15 +13,25 @@ import { Role } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
   ) {}
 
   async register(dto: RegisterDto) {
-    const exists = await this.prisma.user.findUnique({
-      where: { email: dto.email.toLowerCase() },
-    });
+    let exists: any;
+    try {
+      exists = await this.prisma.user.findUnique({
+        where: { email: dto.email.toLowerCase() },
+      });
+    } catch (err) {
+      this.logger.error('Database unreachable during register', err);
+      throw new InternalServerErrorException(
+        'No se pudo conectar a la base de datos. ¿Está corriendo PostgreSQL?',
+      );
+    }
     if (exists) {
       throw new ConflictException('El email ya está registrado');
     }
@@ -29,26 +41,40 @@ export class AuthService {
     // Only admins can create ADMIN or PARTNER roles (handled at controller level)
     const role = dto.role ?? Role.BUYER;
 
-    const user = await this.prisma.user.create({
-      data: {
-        email: dto.email.toLowerCase(),
-        passwordHash,
-        name: dto.name,
-        phone: dto.phone,
-        role,
-      },
-      select: { id: true, email: true, name: true, role: true },
-    });
+    try {
+      const user = await this.prisma.user.create({
+        data: {
+          email: dto.email.toLowerCase(),
+          passwordHash,
+          name: dto.name,
+          phone: dto.phone,
+          role,
+        },
+        select: { id: true, email: true, name: true, role: true },
+      });
 
-    const token = this.signToken(user.id, user.email, user.role);
-
-    return { accessToken: token, user };
+      const token = this.signToken(user.id, user.email, user.role);
+      return { accessToken: token, user };
+    } catch (err) {
+      this.logger.error('Database error during user creation', err);
+      throw new InternalServerErrorException(
+        'Error al crear el usuario en la base de datos.',
+      );
+    }
   }
 
   async login(dto: LoginDto) {
-    const user = await this.prisma.user.findUnique({
-      where: { email: dto.email.toLowerCase() },
-    });
+    let user: any;
+    try {
+      user = await this.prisma.user.findUnique({
+        where: { email: dto.email.toLowerCase() },
+      });
+    } catch (err) {
+      this.logger.error('Database unreachable during login', err);
+      throw new InternalServerErrorException(
+        'No se pudo conectar a la base de datos. ¿Está corriendo PostgreSQL?',
+      );
+    }
 
     if (!user) {
       throw new UnauthorizedException('Credenciales inválidas');
@@ -77,19 +103,26 @@ export class AuthService {
   }
 
   async getProfile(userId: string) {
-    return this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        phone: true,
-        role: true,
-        avatar: true,
-        locale: true,
-        createdAt: true,
-      },
-    });
+    try {
+      return await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          phone: true,
+          role: true,
+          avatar: true,
+          locale: true,
+          createdAt: true,
+        },
+      });
+    } catch (err) {
+      this.logger.error('Database unreachable during getProfile', err);
+      throw new InternalServerErrorException(
+        'No se pudo conectar a la base de datos.',
+      );
+    }
   }
 
   private signToken(userId: string, email: string, role: string): string {

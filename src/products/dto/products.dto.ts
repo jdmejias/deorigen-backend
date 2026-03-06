@@ -148,6 +148,11 @@ export class CreateProductDto {
   @ApiPropertyOptional({ description: 'JSON de características (región, tostado, etc.)' })
   @IsOptional()
   characteristics?: Record<string, any>;
+
+  @ApiPropertyOptional({ description: 'URL de imagen principal del producto' })
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
 }
 
 export class UpdateProductDto {
@@ -227,9 +232,20 @@ export class UpdateProductDto {
   @ApiPropertyOptional()
   @IsOptional()
   characteristics?: Record<string, any>;
+
+  @ApiPropertyOptional({ description: 'URL de imagen principal del producto' })
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
 }
 
 export class ProductsQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  @Type(() => Boolean)
+  includeB2b?: boolean;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

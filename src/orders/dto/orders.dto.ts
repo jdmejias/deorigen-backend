@@ -95,6 +95,13 @@ export class CreateOrderDto {
   @IsString()
   shippingPhone?: string;
 
+  // BUY-01: voluntary support contribution (not taxed, not a physical item)
+  @ApiPropertyOptional({ description: 'Monto voluntario de apoyo/donación (no se aplica IVA)' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  supportAmount?: number;
+
   /* ── Items ── */
   @ApiProperty({ type: [OrderItemInput] })
   @IsArray()

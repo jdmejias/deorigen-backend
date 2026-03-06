@@ -7,10 +7,10 @@ import {
   Body,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiBody } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { PaymentsService } from './payments.service.js';
-import { CreateCheckoutDto } from './dto/payments.dto.js';
+import { CreateCheckoutDto, WompiWebhookDto } from './dto/payments.dto.js';
 import { Public } from '../common/decorators/public.decorator.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { RolesGuard } from '../common/guards/roles.guard.js';
@@ -27,9 +27,24 @@ export class PaymentsController {
     return this.paymentsService.createCheckout(dto);
   }
 
+  /**
+   * Wompi webhook — Wompi POSTs here on every `transaction.updated` event.
+   * Dashboard → Developers → Events → Webhook URL:
+   *   https://api.deorigencampesino.com/v1/payments/webhook/wompi
+   *
+   * This static route is declared BEFORE /:provider so NestJS matches it first.
+   */
+  @Public()
+  @Post('webhook/wompi')
+  @ApiOperation({ summary: 'Wompi payment webhook (transaction.updated)' })
+  @ApiBody({ type: WompiWebhookDto })
+  webhookWompi(@Body() body: any) {
+    return this.paymentsService.handleWompiWebhook(body);
+  }
+
   @Public()
   @Post('webhook/:provider')
-  @ApiOperation({ summary: 'Webhook de pago (provider: stripe, paypal, etc.)' })
+  @ApiOperation({ summary: 'Webhook de pago genérico (fallback)' })
   webhook(
     @Param('provider') provider: string,
     @Body() body: any,

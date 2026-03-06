@@ -12,10 +12,14 @@ import {
 import { PaginationDto, PaginatedResult } from '../common/dto/pagination.dto.js';
 import { Prisma, FulfillmentType, OrderStatus } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
+import { EmailService } from '../email/email.service.js';
 
 @Injectable()
 export class OrdersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private email: EmailService,
+  ) {}
 
   async create(dto: CreateOrderDto, userId?: string) {
     if (!dto.items || dto.items.length === 0) {
@@ -58,6 +62,10 @@ export class OrdersService {
 
     const orderNumber = `DO-${Date.now().toString(36).toUpperCase()}-${uuidv4().slice(0, 4).toUpperCase()}`;
 
+    // BUY-01: supportAmount is a voluntary contribution — excluded from tax base
+    const supportAmount = new Prisma.Decimal(dto.supportAmount ?? 0);
+    const total = subtotal.add(supportAmount);
+
     const order = await this.prisma.order.create({
       data: {
         orderNumber,
@@ -77,7 +85,8 @@ export class OrdersService {
         subtotal,
         shippingCost: 0,
         tax: 0,
-        total: subtotal,
+        supportAmount,
+        total,
         currency: products[0].currency,
         items: { create: orderItems },
         events: {
@@ -91,6 +100,19 @@ export class OrdersService {
     });
 
     return order;
+  }
+
+  async findAllForRole(query: OrdersQueryDto, pagination: PaginationDto, user: any) {
+    if (user.role === 'PARTNER') {
+      const partner = await this.prisma.partner.findUnique({
+        where: { userId: user.id },
+        include: { country: true }
+      });
+      if (partner?.country?.code) {
+        query.countryCode = partner.country.code;
+      }
+    }
+    return this.findAll(query, pagination);
   }
 
   async findAll(query: OrdersQueryDto, pagination: PaginationDto, userId?: string) {
@@ -124,7 +146,8 @@ export class OrdersService {
     return new PaginatedResult(data, total, pagination.page!, pagination.limit!);
   }
 
-  async findOne(id: string) {
+  // BUY-02: caller must provide their userId; ADMIN/PARTNER can read any order
+  async findOne(id: string, requestUserId?: string, isAdminOrPartner = false) {
     const order = await this.prisma.order.findUnique({
       where: { id },
       include: {
@@ -145,6 +168,12 @@ export class OrdersService {
       },
     });
     if (!order) throw new NotFoundException('Pedido no encontrado');
+
+    // Enforce ownership: non-admin users can only view their own orders
+    if (!isAdminOrPartner && requestUserId && order.userId !== requestUserId) {
+      throw new NotFoundException('Pedido no encontrado');
+    }
+
     return order;
   }
 
@@ -165,7 +194,13 @@ export class OrdersService {
     const order = await this.prisma.order.findUnique({ where: { id } });
     if (!order) throw new NotFoundException('Pedido no encontrado');
 
+    if ((dto.status === OrderStatus.SHIPPED || dto.status === OrderStatus.DELIVERED) && !dto.trackingNumber && !order.trackingNumber) {
+      throw new BadRequestException("El número de rastreo (trackingNumber) es obligatorio para marcar como Enviado o Entregado.");
+    }
+
     const data: any = { status: dto.status };
+
+    if (dto.trackingNumber) data.trackingNumber = dto.trackingNumber;
 
     if (dto.status === OrderStatus.SHIPPED) data.shippedAt = new Date();
     if (dto.status === OrderStatus.DELIVERED) data.deliveredAt = new Date();
@@ -174,7 +209,7 @@ export class OrdersService {
     const updated = await this.prisma.order.update({
       where: { id },
       data,
-      include: { items: true, events: { orderBy: { createdAt: 'asc' } } },
+      include: { items: true, events: { orderBy: { createdAt: 'asc' } }, user: { select: { email: true } } },
     });
 
     await this.prisma.orderEvent.create({
@@ -184,6 +219,23 @@ export class OrdersService {
         note: dto.note,
       },
     });
+
+    // P0-03/P1-03: notify buyer on relevant status transitions
+    const notifyStatuses: OrderStatus[] = [
+      OrderStatus.PROCESSING,
+      OrderStatus.SHIPPED,
+      OrderStatus.DELIVERED,
+      OrderStatus.CANCELLED,
+    ];
+    if (notifyStatuses.includes(dto.status)) {
+      const buyerEmail = (updated as any).user?.email ?? order.guestEmail;
+      if (buyerEmail) {
+        // fire-and-forget — don't fail the status update if email fails
+        this.email
+          .sendOrderStatusUpdate(buyerEmail, updated.orderNumber, dto.status)
+          .catch(() => undefined);
+      }
+    }
 
     return updated;
   }

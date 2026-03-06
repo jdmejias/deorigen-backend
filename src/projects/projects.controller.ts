@@ -17,6 +17,7 @@ import {
   CreateInvestmentDto,
 } from './dto/projects.dto.js';
 import { PaginationDto } from '../common/dto/pagination.dto.js';
+import { BulkIdsDto } from '../common/dto/bulk.dto.js';
 import { Public } from '../common/decorators/public.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
@@ -77,5 +78,25 @@ export class ProjectsController {
     @Query() pagination: PaginationDto,
   ) {
     return this.projectsService.getMyInvestments(userId, pagination);
+  }
+
+  // INV-01: Admin confirms investment — only then raisedAmount is incremented
+  @Patch('investments/:id/confirm')
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Confirmar inversión (admin) — acredita raisedAmount' })
+  confirmInvestment(@Param('id') id: string) {
+    return this.projectsService.confirmInvestment(id);
+  }
+
+  // ADM-03: Bulk confirm pending investments
+  @Patch('investments/bulk-confirm')
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Confirmar inversiones en bulk (admin)' })
+  bulkConfirmInvestments(@Body() dto: BulkIdsDto) {
+    return this.projectsService.bulkConfirmInvestments(dto.ids);
   }
 }

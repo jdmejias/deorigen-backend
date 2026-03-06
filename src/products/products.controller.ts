@@ -8,6 +8,7 @@ import {
   Body,
   Query,
   UseGuards,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
@@ -22,9 +23,11 @@ import {
   UpdateBrandDto,
 } from './dto/products.dto.js';
 import { PaginationDto } from '../common/dto/pagination.dto.js';
+import { BulkIdsDto } from '../common/dto/bulk.dto.js';
 import { Public } from '../common/decorators/public.decorator.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { RolesGuard } from '../common/guards/roles.guard.js';
+import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 
 @ApiTags('products')
 @Controller('products')
@@ -54,8 +57,10 @@ export class ProductsController {
   @UseGuards(RolesGuard)
   @Roles(Role.ADMIN, Role.FARMER)
   @ApiOperation({ summary: 'Crear producto' })
-  create(@Body() dto: CreateProductDto) {
-    return this.productsService.create(dto);
+  create(@Body() dto: CreateProductDto, @CurrentUser() currentUser: any) {
+    // For FARMER role: pass userId so service resolves & enforces their own FarmerProfile
+    const currentUserId = currentUser?.role === Role.FARMER ? currentUser.id : undefined;
+    return this.productsService.create(dto, currentUserId);
   }
 
   @Patch(':id')
@@ -63,7 +68,11 @@ export class ProductsController {
   @UseGuards(RolesGuard)
   @Roles(Role.ADMIN, Role.FARMER)
   @ApiOperation({ summary: 'Actualizar producto' })
-  update(@Param('id') id: string, @Body() dto: UpdateProductDto) {
+  update(@Param('id') id: string, @Body() dto: UpdateProductDto, @CurrentUser() currentUser: any) {
+    // Only ADMIN may toggle isActive (approval gate)
+    if (currentUser?.role === Role.FARMER && dto.isActive !== undefined) {
+      throw new ForbiddenException('Solo los administradores pueden activar o desactivar productos');
+    }
     return this.productsService.update(id, dto);
   }
 
@@ -74,6 +83,34 @@ export class ProductsController {
   @ApiOperation({ summary: 'Eliminar producto (admin)' })
   remove(@Param('id') id: string) {
     return this.productsService.remove(id);
+  }
+
+  // ADM-03: Admin bulk actions
+  @Get('admin/pending')
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Listar productos pendientes de aprobación (admin)' })
+  pendingApproval(@Query() pagination: PaginationDto) {
+    return this.productsService.findPendingApproval(pagination);
+  }
+
+  @Patch('admin/bulk-approve')
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Aprobar productos en bulk (admin)' })
+  bulkApprove(@Body() dto: BulkIdsDto) {
+    return this.productsService.bulkApproveProducts(dto.ids);
+  }
+
+  @Patch('admin/bulk-reject')
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Rechazar/desactivar productos en bulk (admin)' })
+  bulkReject(@Body() dto: BulkIdsDto) {
+    return this.productsService.bulkRejectProducts(dto.ids);
   }
 }
 

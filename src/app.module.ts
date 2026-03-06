@@ -18,6 +18,7 @@ import { PaymentsModule } from './payments/payments.module.js';
 import { MediaModule } from './media/media.module.js';
 import { EmailModule } from './email/email.module.js';
 import { PostsModule } from './posts/posts.module.js';
+import { DashboardModule } from './dashboard/dashboard.module.js';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { PostsModule } from './posts/posts.module.js';
     MediaModule,
     EmailModule,
     PostsModule,
+    DashboardModule,
   ],
   controllers: [HealthController],
   providers: [

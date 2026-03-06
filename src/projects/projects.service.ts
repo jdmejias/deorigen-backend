@@ -1,17 +1,21 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { EmailService } from '../email/email.service.js';
 import {
   CreateProjectDto,
   UpdateProjectDto,
   CreateInvestmentDto,
 } from './dto/projects.dto.js';
 import { PaginationDto, PaginatedResult } from '../common/dto/pagination.dto.js';
-import { ProjectStatus, Prisma } from '@prisma/client';
+import { ProjectStatus, InvestmentStatus, Prisma } from '@prisma/client';
 import slugify from 'slugify';
 
 @Injectable()
 export class ProjectsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private email: EmailService,
+  ) {}
 
   async findAll(pagination: PaginationDto) {
     const where: Prisma.ProjectWhereInput = { status: ProjectStatus.ACTIVE };
@@ -112,25 +116,88 @@ export class ProjectsService {
       throw new BadRequestException('Proyecto no está activo');
     }
 
+    // INV-01: Create investment as PENDING — raisedAmount is only incremented on admin confirmation
     const investment = await this.prisma.investment.create({
       data: {
         projectId: dto.projectId,
         userId,
         amount: dto.amount,
         currency: project.currency,
+        status: InvestmentStatus.PENDING,
         note: dto.note,
       },
-    });
-
-    // Update raised amount
-    await this.prisma.project.update({
-      where: { id: dto.projectId },
-      data: {
-        raisedAmount: { increment: dto.amount },
+      include: {
+        user: { select: { email: true, name: true } },
+        project: { select: { title: true } },
       },
     });
 
-    return investment;
+    // INV-03: Send confirmation email to investor
+    try {
+      await this.email.sendInvestmentConfirmation(
+        investment.user.email,
+        investment.project.title,
+        investment.amount.toString(),
+        investment.currency,
+      );
+    } catch (_) {
+      // non-blocking — don't fail the request if email fails
+    }
+
+    return {
+      id: investment.id,
+      projectId: investment.projectId,
+      amount: investment.amount,
+      currency: investment.currency,
+      status: investment.status,
+      note: investment.note,
+      createdAt: investment.createdAt,
+    };
+  }
+
+  // INV-01 admin: confirm investment and credit raisedAmount
+  async confirmInvestment(investmentId: string) {
+    const investment = await this.prisma.investment.findUnique({
+      where: { id: investmentId },
+    });
+    if (!investment) throw new NotFoundException('Inversión no encontrada');
+    if (investment.status !== InvestmentStatus.PENDING) {
+      throw new BadRequestException('La inversión no está en estado PENDING');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.investment.update({
+        where: { id: investmentId },
+        data: { status: InvestmentStatus.CONFIRMED },
+      });
+      await tx.project.update({
+        where: { id: investment.projectId },
+        data: { raisedAmount: { increment: investment.amount } },
+      });
+      return updated;
+    });
+  }
+
+  // ADM-03: bulk confirm pending investments
+  async bulkConfirmInvestments(ids: string[]) {
+    const investments = await this.prisma.investment.findMany({
+      where: { id: { in: ids }, status: InvestmentStatus.PENDING },
+    });
+    if (!investments.length) return { updated: 0 };
+
+    return this.prisma.$transaction(async (tx) => {
+      const result = await tx.investment.updateMany({
+        where: { id: { in: ids }, status: InvestmentStatus.PENDING },
+        data: { status: InvestmentStatus.CONFIRMED },
+      });
+      for (const inv of investments) {
+        await tx.project.update({
+          where: { id: inv.projectId },
+          data: { raisedAmount: { increment: inv.amount } },
+        });
+      }
+      return { updated: result.count, action: 'confirmed' };
+    });
   }
 
   async getMyInvestments(userId: string, pagination: PaginationDto) {

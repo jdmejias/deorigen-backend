@@ -77,4 +77,36 @@ export class EmailService {
     `;
     await this.send(email, `Pedido ${orderNumber} confirmado – DeOrigen`, html);
   }
+
+  async sendInvestmentConfirmation(email: string, projectTitle: string, amount: string, currency: string) {
+    const html = `
+      <h2>¡Propuesta de inversión recibida!</h2>
+      <p>Tu propuesta de inversión en el proyecto <strong>${projectTitle}</strong> ha sido recibida.</p>
+      <p>Monto propuesto: <strong>${amount} ${currency}</strong></p>
+      <p>Tu inversión está pendiente de confirmación por el equipo de DeOrigen. Te notificaremos cuando sea procesada.</p>
+      <p style="margin-top:20px;color:#666;">
+        <em>"En DeOrigen, Conectamos el campo colombiano con el mundo"</em>
+      </p>
+    `;
+    await this.send(email, `Propuesta de inversión en ${projectTitle} – DeOrigen`, html);
+  }
+
+  async sendOrderStatusUpdate(email: string, orderNumber: string, status: string) {
+    const statusLabels: Record<string, string> = {
+      SHIPPED: 'enviado',
+      DELIVERED: 'entregado',
+      PROCESSING: 'en preparación',
+      CANCELLED: 'cancelado',
+    };
+    const label = statusLabels[status] ?? status.toLowerCase();
+    const html = `
+      <h2>Actualización de tu pedido</h2>
+      <p>Tu pedido <strong>${orderNumber}</strong> ha sido marcado como <strong>${label}</strong>.</p>
+      <p>Puedes consultar el estado de tu pedido en tu área de cliente en DeOrigen.</p>
+      <p style="margin-top:20px;color:#666;">
+        <em>"En DeOrigen, Conectamos el campo colombiano con el mundo"</em>
+      </p>
+    `;
+    await this.send(email, `Pedido ${orderNumber} – estado actualizado a ${label} – DeOrigen`, html);
+  }
 }

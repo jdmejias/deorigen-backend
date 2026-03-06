@@ -21,6 +21,7 @@ import { PaginationDto } from '../common/dto/pagination.dto.js';
 import { Public } from '../common/decorators/public.decorator.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { RolesGuard } from '../common/guards/roles.guard.js';
+import { CreateWithdrawalDto } from './dto/withdraw.dto.js';
 
 @ApiTags('farmers')
 @Controller('farmers')
@@ -73,5 +74,17 @@ export class FarmersController {
   @ApiOperation({ summary: 'Eliminar perfil productor (admin)' })
   remove(@Param('id') id: string) {
     return this.farmersService.remove(id);
+  }
+
+  @Post(':id/withdrawals')
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN, Role.FARMER)
+  @ApiOperation({ summary: 'Solicitar retiro de saldo' })
+  createWithdrawal(
+    @Param('id') id: string,
+    @Body() dto: CreateWithdrawalDto,
+  ) {
+    return this.farmersService.createWithdrawal(id, dto.amount, dto.bankAccountInfo);
   }
 }

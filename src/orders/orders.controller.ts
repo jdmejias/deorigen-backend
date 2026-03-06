@@ -8,10 +8,13 @@ import {
   Query,
   UseGuards,
   Headers,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { OrdersService } from './orders.service.js';
+import { PdfService } from './pdf.service.js';
 import {
   CreateOrderDto,
   UpdateOrderStatusDto,
@@ -26,7 +29,10 @@ import { RolesGuard } from '../common/guards/roles.guard.js';
 @ApiTags('orders')
 @Controller('orders')
 export class OrdersController {
-  constructor(private ordersService: OrdersService) {}
+  constructor(
+    private ordersService: OrdersService,
+    private pdfService: PdfService,
+  ) {}
 
   @Public()
   @Post()
@@ -41,10 +47,14 @@ export class OrdersController {
   @Get()
   @ApiBearerAuth()
   @UseGuards(RolesGuard)
-  @Roles(Role.ADMIN)
-  @ApiOperation({ summary: 'Listar todos los pedidos (admin)' })
-  findAll(@Query() query: OrdersQueryDto, @Query() pagination: PaginationDto) {
-    return this.ordersService.findAll(query, pagination);
+  @Roles(Role.ADMIN, Role.PARTNER)
+  @ApiOperation({ summary: 'Listar pedidos (admin/partner)' })
+  findAll(
+    @Query() query: OrdersQueryDto,
+    @Query() pagination: PaginationDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.ordersService.findAllForRole(query, pagination, user);
   }
 
   @Get('my')
@@ -68,8 +78,31 @@ export class OrdersController {
   @Get(':id')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Obtener pedido por ID' })
-  findOne(@Param('id') id: string) {
-    return this.ordersService.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: any) {
+    const isAdminOrPartner = user?.role === 'ADMIN' || user?.role === 'PARTNER';
+    // BUY-02: pass the caller's userId so the service can enforce ownership
+    return this.ordersService.findOne(id, user?.id, isAdminOrPartner);
+  }
+
+  // BUY-03: Download PDF receipt/invoice for an order
+  @Get(':id/pdf')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Descargar PDF del pedido' })
+  async downloadPdf(
+    @Param('id') id: string,
+    @CurrentUser() user: any,
+    @Res() res: Response,
+  ) {
+    const isAdminOrPartner = user?.role === 'ADMIN' || user?.role === 'PARTNER';
+    const order = await this.ordersService.findOne(id, user?.id, isAdminOrPartner);
+    const pdfBuffer = await this.pdfService.generateOrderPdf(order);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="pedido-${order.orderNumber}.pdf"`,
+      'Content-Length': pdfBuffer.length,
+    });
+    res.end(pdfBuffer);
   }
 
   @Patch(':id/status')
