@@ -147,32 +147,30 @@ async function main() {
       where: { slug: f.category },
     });
 
-    // Create sample product
-    const productSlug = `${slug}-producto-1`;
-    await prisma.product.upsert({
-      where: { slug: productSlug },
-      update: {},
-      create: {
-        farmerId: profile.id,
-        categoryId: category?.id ?? null,
-        name: `Producto de ${f.name}`,
-        slug: productSlug,
-        description: `Producto artesanal de ${f.region}, cultivado con métodos tradicionales.`,
-        shortDescription: `Directo del campo de ${f.region}`,
-        price: 15.99,
-        currency: 'EUR',
-        stock: 100,
-        isActive: true,
-        isFeatured: true,
-        characteristics: {
-          origen: f.region,
-          proceso: 'Artesanal',
-          certificación: 'Orgánico',
+    // Auto-create product is disabled per P0-2 to avoid polluting real data
+    if (process.env.SEED_DEMO === 'true') {
+      const productSlug = `${slug}-producto-1`;
+      await prisma.product.upsert({
+        where: { slug: productSlug },
+        update: {},
+        create: {
+          farmerId: profile.id,
+          categoryId: category?.id ?? null,
+          name: `Producto de ${f.name}`,
+          slug: productSlug,
+          description: `Producto artesanal`,
+          shortDescription: `Directo del campo`,
+          price: 15.99,
+          currency: 'EUR',
+          stock: 100,
+          isActive: true,
+          isFeatured: true,
         },
-      },
-    });
-
-    console.log(`  ✔ Farmer: ${f.name} + 1 product`);
+      });
+      console.log(`  ✔ Farmer: ${f.name} + 1 product`);
+    } else {
+      console.log(`  ✔ Farmer: ${f.name}`);
+    }
   }
 
   // ── Sample Buyer user ──
