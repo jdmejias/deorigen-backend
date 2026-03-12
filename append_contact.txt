@@ -1,0 +1,9 @@
+  @Public()
+  @Post(':id/contact')
+  @ApiOperation({ summary: 'Contactar productor por email' })
+  async contactFarmer(
+    @Param('id') id: string,
+    @Body() dto: { name: string; email: string; message: string; phone?: string }
+  ) {
+    return this.farmersService.contactFarmer(id, dto);
+  }

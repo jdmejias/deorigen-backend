@@ -86,7 +86,7 @@ export class DashboardService {
     if (!farmer) return [];
 
     const products = await this.prisma.product.findMany({
-      where: { farmerId: farmer.id },
+      where: { farmerId: farmer.id, deletedAt: null },
       include: {
         category: { select: { id: true, name: true, slug: true } },
         media: {
@@ -120,6 +120,7 @@ export class DashboardService {
   /** Returns ALL products (active + inactive/pending) for the admin dashboard. */
   async getAdminProducts() {
     const products = await this.prisma.product.findMany({
+      where: { deletedAt: null },
       include: {
         category: { select: { id: true, name: true, slug: true } },
         farmer: {

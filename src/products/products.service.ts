@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
   CreateProductDto,
@@ -156,10 +156,12 @@ export class ProductsService {
       const profile = await this.prisma.farmerProfile.findUnique({ where: { userId: currentUserId } });
       if (!profile) throw new NotFoundException('Perfil de productor no encontrado para este usuario');
       resolvedFarmerId = profile.id;
-    } else {
+    } else if (dto.farmerId) {
       const farmer = await this.prisma.farmerProfile.findUnique({ where: { id: dto.farmerId } });
       if (!farmer) throw new NotFoundException('Productor no encontrado');
       resolvedFarmerId = farmer.id;
+    } else {
+      throw new BadRequestException('farmerId es requerido cuando no se autentica como FARMER');
     }
 
     // Validate categoryId before insert to return 400 instead of Prisma P2003 (500)
@@ -203,15 +205,16 @@ export class ProductsService {
       },
     });
 
-    // If an imageUrl was provided, create a Media record linked to this product
-    if (dto.imageUrl) {
+    // Persist image Media records: prefer imageUrls array, fall back to single imageUrl
+    const createUrls = dto.imageUrls?.length ? dto.imageUrls : dto.imageUrl ? [dto.imageUrl] : [];
+    for (let i = 0; i < createUrls.length; i++) {
       await this.prisma.media.create({
         data: {
           productId: product.id,
-          url: dto.imageUrl,
+          url: createUrls[i],
           type: 'image',
-          altText: dto.name,
-          sortOrder: 0,
+          altText: `${dto.name} ${i + 1}`,
+          sortOrder: i,
         },
       });
     }
@@ -219,12 +222,20 @@ export class ProductsService {
     return product;
   }
 
-  async update(id: string, dto: UpdateProductDto) {
+  async update(id: string, dto: UpdateProductDto, ownerUserId?: string) {
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException('Producto no encontrado');
 
-    // Extract imageUrl before spreading to avoid passing it to Prisma Product update
-    const { imageUrl, ...rest } = dto as UpdateProductDto & { imageUrl?: string };
+    // Ownership check: FARMER may only edit their own products
+    if (ownerUserId) {
+      const profile = await this.prisma.farmerProfile.findUnique({ where: { userId: ownerUserId } });
+      if (!profile || product.farmerId !== profile.id) {
+        throw new ForbiddenException('No tienes permiso para editar este producto');
+      }
+    }
+
+    // Extract image fields before spreading to avoid passing them to Prisma Product update
+    const { imageUrl, imageUrls, ...rest } = dto as UpdateProductDto & { imageUrl?: string; imageUrls?: string[] };
     const data: any = { ...rest };
     if (dto.name) {
       data.slug = await this.uniqueSlug(
@@ -239,25 +250,37 @@ export class ProductsService {
       include: {
         category: true,
         brand: true,
+        media: { orderBy: { sortOrder: 'asc' } },
       },
     });
 
-    // If an imageUrl was provided, upsert the first Media record for this product
-    if (imageUrl) {
-      const existing = await this.prisma.media.findFirst({ where: { productId: id }, orderBy: { sortOrder: 'asc' } });
-      if (existing) {
-        await this.prisma.media.update({ where: { id: existing.id }, data: { url: imageUrl, altText: dto.name ?? product.name } });
-      } else {
-        await this.prisma.media.create({ data: { productId: id, url: imageUrl, type: 'image', altText: dto.name ?? product.name, sortOrder: 0 } });
+    // Sync image Media records: prefer imageUrls array, fall back to single imageUrl
+    const updateUrls = imageUrls?.length ? imageUrls : imageUrl ? [imageUrl] : null;
+    if (updateUrls !== null) {
+      // Replace all existing image media for this product
+      await this.prisma.media.deleteMany({ where: { productId: id, type: 'image' } });
+      for (let i = 0; i < updateUrls.length; i++) {
+        await this.prisma.media.create({
+          data: { productId: id, url: updateUrls[i], type: 'image', altText: dto.name ?? product.name, sortOrder: i },
+        });
       }
     }
 
     return updated;
   }
 
-  async remove(id: string) {
+  async remove(id: string, ownerUserId?: string) {
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException('Producto no encontrado');
+
+    // Ownership check: FARMER may only delete their own products
+    if (ownerUserId) {
+      const profile = await this.prisma.farmerProfile.findUnique({ where: { userId: ownerUserId } });
+      if (!profile || product.farmerId !== profile.id) {
+        throw new ForbiddenException('No tienes permiso para eliminar este producto');
+      }
+    }
+
     await this.prisma.product.delete({ where: { id } });
     return { deleted: true };
   }
@@ -310,5 +333,36 @@ export class ProductsService {
       slug = `${base}-${counter}`;
     }
     return slug;
+  }
+
+  // --- REVIEWS ---
+  async getReviews(productId: string) {
+    return this.prisma.review.findMany({
+      where: { productId },
+      include: { user: { select: { id: true, name: true, avatar: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async createReview(productId: string, userId: string, dto: any) {
+    // Check if review already exists
+    const existing = await this.prisma.review.findUnique({
+      where: {
+        productId_userId: { productId, userId },
+      },
+    });
+
+    if (existing) {
+      throw new ConflictException('You have already reviewed this product.');
+    }
+
+    return this.prisma.review.create({
+      data: {
+        productId,
+        userId,
+        rating: dto.rating,
+        comment: dto.comment,
+      },
+    });
   }
 }

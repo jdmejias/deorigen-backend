@@ -1,9 +1,11 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { EmailService } from '../email/email.service.js';
 import {
   CreateFarmerProfileDto,
   UpdateFarmerProfileDto,
   FarmersQueryDto,
+  ContactFarmerDto,
 } from './dto/farmers.dto.js';
 import { PaginationDto, PaginatedResult } from '../common/dto/pagination.dto.js';
 import { Prisma } from '@prisma/client';
@@ -11,9 +13,55 @@ import slugify from 'slugify';
 
 @Injectable()
 export class FarmersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private emailService: EmailService) {}
 
   /* ── Featured (20 del mes) ── */
+
+  async contactFarmer(id: string, dto: ContactFarmerDto) {
+    const farmer = await this.prisma.farmerProfile.findUnique({
+      where: { id },
+      include: { user: true }
+    });
+
+    if (!farmer) throw new NotFoundException('Productor no encontrado');
+
+    const farmerEmail = farmer.user.email;
+    const productCtx = dto.productName
+      ? `\nProducto de contexto: ${dto.productName}${dto.productSlug ? ` (/${dto.productSlug})` : ''}`
+      : '';
+
+    const emailBody = [
+      `Tienes un nuevo mensaje de contacto a través de DeOrigen.`,
+      ``,
+      `Nombre: ${dto.name}`,
+      `Email: ${dto.email}`,
+      `Teléfono: ${dto.phone || 'N/A'}`,
+      productCtx,
+      ``,
+      `Mensaje:`,
+      dto.message,
+    ].join('\n');
+
+    await this.prisma.lead.create({
+      data: {
+        type: 'contacto_productor',
+        name: dto.name,
+        email: dto.email,
+        phone: dto.phone,
+        message: `Para productor ${farmer.id}${productCtx}: ${dto.message}`,
+      }
+    });
+
+    // Send email to the farmer (or admin if SMTP not configured — falls back to log)
+    await this.emailService.send(
+      farmerEmail,
+      `Nuevo mensaje de contacto – DeOrigen`,
+      `<pre style="font-family:sans-serif">${emailBody}</pre>`,
+    );
+
+    return { success: true, message: 'Mensaje enviado' };
+  }
+
   async findFeatured() {
     const now = new Date();
     return this.prisma.farmerProfile.findMany({
@@ -136,15 +184,29 @@ export class FarmersService {
 
   /* ── Update ── */
   async update(id: string, dto: UpdateFarmerProfileDto) {
-    const farmer = await this.prisma.farmerProfile.findUnique({ where: { id } });
+    const farmer = await this.prisma.farmerProfile.findUnique({
+      where: { id },
+      include: { user: true },
+    });
     if (!farmer) throw new NotFoundException('Perfil de productor no encontrado');
+
+    // Destructure name so it is not spread into FarmerProfile (it lives in User)
+    const { name, ...profileData } = dto;
+
+    // Update User.name if provided
+    if (name) {
+      await this.prisma.user.update({
+        where: { id: farmer.userId },
+        data: { name },
+      });
+    }
 
     return this.prisma.farmerProfile.update({
       where: { id },
       data: {
-        ...dto,
-        featuredFrom: dto.featuredFrom ? new Date(dto.featuredFrom) : undefined,
-        featuredTo: dto.featuredTo ? new Date(dto.featuredTo) : undefined,
+        ...profileData,
+        featuredFrom: profileData.featuredFrom ? new Date(profileData.featuredFrom) : undefined,
+        featuredTo: profileData.featuredTo ? new Date(profileData.featuredTo) : undefined,
       },
       include: {
         user: { select: { id: true, name: true } },

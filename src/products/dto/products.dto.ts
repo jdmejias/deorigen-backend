@@ -1,5 +1,8 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  ApiProperty,
+  ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsArray,
   IsBoolean,
   IsDecimal,
   IsInt,
@@ -8,8 +11,9 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  Min,
   Matches,
+  Max,
+  Min
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -77,9 +81,10 @@ export class UpdateBrandDto {
 
 /* ── Product ── */
 export class CreateProductDto {
-  @ApiProperty()
+  @ApiPropertyOptional({ description: 'ID del productor (opcional cuando el caller es FARMER — se resuelve desde el JWT)' })
+  @IsOptional()
   @IsString()
-  farmerId: string;
+  farmerId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -162,6 +167,12 @@ export class CreateProductDto {
   @IsOptional()
   @IsString()
   imageUrl?: string;
+
+  @ApiPropertyOptional({ description: 'URLs de imágenes del producto (máx 3)', type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  imageUrls?: string[];
 }
 
 export class UpdateProductDto {
@@ -254,6 +265,12 @@ export class UpdateProductDto {
   @IsOptional()
   @IsString()
   imageUrl?: string;
+
+  @ApiPropertyOptional({ description: 'URLs de imágenes del producto (máx 3)', type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  imageUrls?: string[];
 }
 
 export class ProductsQueryDto {
@@ -302,3 +319,19 @@ export class ProductsQueryDto {
   @IsBoolean()
   featured?: boolean;
 }
+
+
+export class CreateReviewDto {
+  @ApiProperty({ example: 5, description: 'Calificaci�n de 1 a 5' })
+  @IsNumber()
+  @Min(1)
+  @Max(5)
+  rating: number;
+
+  @ApiPropertyOptional({ example: 'Excelente producto', description: 'Comentario opcional' })
+  @IsOptional()
+  @IsString()
+  comment?: string;
+}
+
+

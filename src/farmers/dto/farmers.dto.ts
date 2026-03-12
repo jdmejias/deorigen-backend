@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsBoolean,
   IsDateString,
+  IsEmail,
   IsOptional,
   IsString,
   IsUrl,
@@ -40,6 +41,11 @@ export class CreateFarmerProfileDto {
 }
 
 export class UpdateFarmerProfileDto {
+  @ApiPropertyOptional({ description: 'Nombre visible del productor (actualiza User.name)' })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -103,4 +109,34 @@ export class FarmersQueryDto {
   @Type(() => Boolean)
   @IsBoolean()
   featured?: boolean;
+}
+
+// ── Contact Farmer ──────────────────────────────────────────────
+export class ContactFarmerDto {
+  @ApiProperty({ description: 'Nombre de quien contacta' })
+  @IsString()
+  name: string;
+
+  @ApiProperty({ description: 'Email de quien contacta' })
+  @IsEmail()
+  email: string;
+
+  @ApiProperty({ description: 'Mensaje' })
+  @IsString()
+  message: string;
+
+  @ApiPropertyOptional({ description: 'Teléfono (opcional)' })
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @ApiPropertyOptional({ description: 'Nombre del producto de contexto (si aplica)' })
+  @IsOptional()
+  @IsString()
+  productName?: string;
+
+  @ApiPropertyOptional({ description: 'Slug del producto de contexto (si aplica)' })
+  @IsOptional()
+  @IsString()
+  productSlug?: string;
 }

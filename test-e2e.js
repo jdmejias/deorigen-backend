@@ -37,7 +37,9 @@ async function test() {
       description: 'Test description',
       price: 100,
       stock: 50,
-      farmerId: 'will-be-overridden'
+      farmerId: 'will-be-overridden',
+      videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      imageUrls: ['https://picsum.photos/300']
     };
     
     const product = await request('/products', {

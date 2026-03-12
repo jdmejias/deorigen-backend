@@ -21,6 +21,7 @@ import {
   UpdateCategoryDto,
   CreateBrandDto,
   UpdateBrandDto,
+  CreateReviewDto,
 } from './dto/products.dto.js';
 import { PaginationDto } from '../common/dto/pagination.dto.js';
 import { BulkIdsDto } from '../common/dto/bulk.dto.js';
@@ -50,6 +51,26 @@ export class ProductsController {
     return this.productsService.findBySlug(slug);
   }
 
+  // --- REVIEWS ---
+
+  @Public()
+  @Get(':id/reviews')
+  @ApiOperation({ summary: 'Obtener reseñas de un producto' })
+  getReviews(@Param('id') id: string) {
+    return this.productsService.getReviews(id);
+  }
+
+  @Post(':id/reviews')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Crear una reseña para un producto' })
+  createReview(
+    @Param('id') id: string,
+    @Body() dto: CreateReviewDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.productsService.createReview(id, user.id, dto);
+  }
+
   /* ── Admin endpoints ── */
 
   @Post()
@@ -73,16 +94,20 @@ export class ProductsController {
     if (currentUser?.role === Role.FARMER && dto.isActive !== undefined) {
       throw new ForbiddenException('Solo los administradores pueden activar o desactivar productos');
     }
-    return this.productsService.update(id, dto);
+    // Ownership enforcement: FARMER may only edit their own products
+    const ownerUserId = currentUser?.role === Role.FARMER ? currentUser.id : undefined;
+    return this.productsService.update(id, dto, ownerUserId);
   }
 
   @Delete(':id')
   @ApiBearerAuth()
   @UseGuards(RolesGuard)
-  @Roles(Role.ADMIN)
-  @ApiOperation({ summary: 'Eliminar producto (admin)' })
-  remove(@Param('id') id: string) {
-    return this.productsService.remove(id);
+  @Roles(Role.ADMIN, Role.FARMER)
+  @ApiOperation({ summary: 'Eliminar producto (admin o propietario)' })
+  remove(@Param('id') id: string, @CurrentUser() currentUser: any) {
+    // Ownership enforcement: FARMER may only delete their own products
+    const ownerUserId = currentUser?.role === Role.FARMER ? currentUser.id : undefined;
+    return this.productsService.remove(id, ownerUserId);
   }
 
   // ADM-03: Admin bulk actions

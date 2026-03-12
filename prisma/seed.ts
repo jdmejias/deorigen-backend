@@ -112,7 +112,12 @@ async function main() {
   for (const f of farmers) {
     const user = await prisma.user.upsert({
       where: { email: f.email },
-      update: {},
+      update: {
+        // Ensure existing accounts are set as FARMER and keep password/name in sync
+        role: Role.FARMER,
+        passwordHash: farmerHash,
+        name: f.name,
+      },
       create: {
         email: f.email,
         passwordHash: farmerHash,

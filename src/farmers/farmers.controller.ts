@@ -16,6 +16,7 @@ import {
   CreateFarmerProfileDto,
   UpdateFarmerProfileDto,
   FarmersQueryDto,
+  ContactFarmerDto,
 } from './dto/farmers.dto.js';
 import { PaginationDto } from '../common/dto/pagination.dto.js';
 import { Public } from '../common/decorators/public.decorator.js';
@@ -86,5 +87,15 @@ export class FarmersController {
     @Body() dto: CreateWithdrawalDto,
   ) {
     return this.farmersService.createWithdrawal(id, dto.amount, dto.bankAccountInfo);
+  }
+
+  @Public()
+  @Post(':id/contact')
+  @ApiOperation({ summary: 'Contactar productor por email' })
+  async contactFarmer(
+    @Param('id') id: string,
+    @Body() dto: ContactFarmerDto,
+  ) {
+    return this.farmersService.contactFarmer(id, dto);
   }
 }
